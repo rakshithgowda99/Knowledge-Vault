@@ -1,13 +1,25 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertArticleSchema, type InsertArticle } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, Save, X, Eye, Edit3 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import { Switch } from "@/components/ui/switch";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Loader2, Save, X, Eye, Edit3, Globe, Lock } from "lucide-react";
+import { MarkdownContent } from "@/components/MarkdownContent";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +57,19 @@ export function ArticleEditor({ initialData, onSubmit, isSubmitting, onCancel }:
   };
 
   const currentContent = form.watch("content");
+  const currentTitle = form.watch("title");
+
+  // Warn on unsaved changes when navigating away
+  const isDirty = form.formState.isDirty;
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   // Handle tag input as comma-separated string for simplicity in UI
   const [tagInput, setTagInput] = useState(initialData?.tags.join(", ") || "");
@@ -83,9 +108,27 @@ export function ArticleEditor({ initialData, onSubmit, isSubmitting, onCancel }:
         </div>
         
         <div className="flex items-center gap-2">
-          <Button variant="ghost" onClick={onCancel} disabled={isSubmitting}>
-            Cancel
-          </Button>
+          {isDirty ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" disabled={isSubmitting}>Cancel</Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    You have unsaved changes that will be lost if you leave.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Keep editing</AlertDialogCancel>
+                  <AlertDialogAction onClick={onCancel}>Discard</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : (
+            <Button variant="ghost" onClick={onCancel} disabled={isSubmitting}>Cancel</Button>
+          )}
           <Button onClick={form.handleSubmit(handleSubmit)} disabled={isSubmitting} className="min-w-[100px]">
             {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (
               <>
@@ -117,7 +160,7 @@ export function ArticleEditor({ initialData, onSubmit, isSubmitting, onCancel }:
               )}
             />
             
-            <div className="flex gap-4">
+            <div className="flex gap-4 items-end">
                <FormItem className="flex-1">
                  <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Tags</FormLabel>
                  <FormControl>
@@ -129,13 +172,29 @@ export function ArticleEditor({ initialData, onSubmit, isSubmitting, onCancel }:
                    />
                  </FormControl>
                </FormItem>
+
+               <FormField
+                 control={form.control}
+                 name="isPublic"
+                 render={({ field }) => (
+                   <FormItem className="flex items-center gap-2 pb-2">
+                     <FormControl>
+                       <Switch checked={field.value} onCheckedChange={field.onChange} />
+                     </FormControl>
+                     <FormLabel className="!mt-0 flex items-center gap-1.5 text-sm cursor-pointer">
+                       {field.value ? <Globe className="w-3.5 h-3.5 text-green-600" /> : <Lock className="w-3.5 h-3.5 text-muted-foreground" />}
+                       {field.value ? "Public" : "Private"}
+                     </FormLabel>
+                   </FormItem>
+                 )}
+               />
             </div>
           </div>
 
           <div className="flex-1 min-h-[500px] border border-border rounded-xl overflow-hidden bg-card shadow-sm">
             {isPreview ? (
               <div className="p-8 prose-content overflow-y-auto h-full max-h-[70vh]">
-                <ReactMarkdown>{currentContent || "*No content yet*"}</ReactMarkdown>
+                <MarkdownContent content={currentContent || "*No content yet*"} />
               </div>
             ) : (
               <FormField

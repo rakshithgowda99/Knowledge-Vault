@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, buildUrl, type InsertArticle, type SearchParams } from "@shared/routes";
+import { api, buildUrl } from "@shared/routes";
+import type { InsertArticle, SearchParams } from "@shared/schema";
 
-// GET /api/articles - List with search/tags
+// GET /api/articles - List with search/tags/favorites
 export function useArticles(params?: SearchParams) {
   return useQuery({
     queryKey: [api.articles.list.path, params],
@@ -10,9 +11,9 @@ export function useArticles(params?: SearchParams) {
       const validParams: Record<string, string> = {};
       if (params?.q) validParams.q = params.q;
       if (params?.tag) validParams.tag = params.tag;
+      if (params?.favorite) validParams.favorite = params.favorite;
 
       const url = buildUrl(api.articles.list.path);
-      // Append query string manually since buildUrl doesn't handle query string params yet
       const queryString = new URLSearchParams(validParams).toString();
       const finalUrl = queryString ? `${url}?${queryString}` : url;
 
@@ -91,7 +92,7 @@ export function useUpdateArticle() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [api.articles.list.path] });
       queryClient.invalidateQueries({ queryKey: [api.articles.get.path, data.id] });
-      queryClient.invalidateQueries({ queryKey: [api.versions.list.path, data.id] }); // Also invalidate versions
+      queryClient.invalidateQueries({ queryKey: [api.versions.list.path, data.id] });
     },
   });
 }
@@ -112,6 +113,48 @@ export function useDeleteArticle() {
   });
 }
 
+// Toggle favorite (per-user via favorites API)
+export function useToggleFavorite() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isFavorite }: { id: string; isFavorite: boolean }) => {
+      if (isFavorite) {
+        // Remove from favorites
+        const url = buildUrl(api.favorites.remove.path, { articleId: id });
+        const res = await fetch(url, { method: 'DELETE', credentials: "include" });
+        if (res.status === 401) throw new Error('Login required to manage favorites');
+        if (!res.ok) throw new Error('Failed to remove favorite');
+      } else {
+        // Add to favorites
+        const url = buildUrl(api.favorites.add.path, { articleId: id });
+        const res = await fetch(url, { method: 'POST', credentials: "include" });
+        if (res.status === 401) throw new Error('Login required to manage favorites');
+        if (!res.ok) throw new Error('Failed to add favorite');
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.articles.list.path] });
+      // Invalidate all individual article queries too
+      queryClient.invalidateQueries({ predicate: (query) => {
+        const key = query.queryKey[0];
+        return key === api.articles.get.path;
+      }});
+    },
+  });
+}
+
+// GET /api/tags
+export function useTags() {
+  return useQuery({
+    queryKey: [api.tags.list.path],
+    queryFn: async () => {
+      const res = await fetch(api.tags.list.path, { credentials: "include" });
+      if (!res.ok) throw new Error('Failed to fetch tags');
+      return api.tags.list.responses[200].parse(await res.json());
+    },
+  });
+}
+
 // GET /api/articles/:id/versions
 export function useArticleVersions(id: string) {
   return useQuery({
@@ -123,5 +166,26 @@ export function useArticleVersions(id: string) {
       return api.versions.list.responses[200].parse(await res.json());
     },
     enabled: !!id,
+  });
+}
+
+// POST /api/articles/:id/versions/:versionId/restore
+export function useRestoreVersion() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ articleId, versionId }: { articleId: string; versionId: string }) => {
+      const url = buildUrl(api.versions.restore.path, { id: articleId, versionId });
+      const res = await fetch(url, {
+        method: 'POST',
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error('Failed to restore version');
+      return api.versions.restore.responses[200].parse(await res.json());
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [api.articles.get.path, data.id] });
+      queryClient.invalidateQueries({ queryKey: [api.versions.list.path, data.id] });
+      queryClient.invalidateQueries({ queryKey: [api.articles.list.path] });
+    },
   });
 }

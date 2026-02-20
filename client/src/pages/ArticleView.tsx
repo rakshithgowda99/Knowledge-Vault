@@ -1,5 +1,6 @@
 import { Link, useRoute, useLocation } from "wouter";
-import { useArticle, useDeleteArticle } from "@/hooks/use-articles";
+import { useArticle, useDeleteArticle, useToggleFavorite } from "@/hooks/use-articles";
+import { useUser } from "@/hooks/use-auth";
 import { Sidebar } from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,8 +14,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Loader2, ArrowLeft, Calendar, Tag, Edit, Trash2, History } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import { Loader2, ArrowLeft, Calendar, Tag, Edit, Trash2, History, Star, Globe, Lock } from "lucide-react";
+import { MarkdownContent } from "@/components/MarkdownContent";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -25,6 +26,8 @@ export default function ArticleView() {
   
   const { data: article, isLoading, error } = useArticle(id);
   const deleteMutation = useDeleteArticle();
+  const toggleFavorite = useToggleFavorite();
+  const { data: user } = useUser();
   const { toast } = useToast();
 
   const handleDelete = async () => {
@@ -41,7 +44,7 @@ export default function ArticleView() {
     return (
       <div className="flex min-h-screen">
         <Sidebar />
-        <main className="flex-1 flex items-center justify-center">
+        <main className="flex-1 flex items-center justify-center pt-16 md:pt-0">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </main>
       </div>
@@ -52,7 +55,7 @@ export default function ArticleView() {
     return (
       <div className="flex min-h-screen">
         <Sidebar />
-        <main className="flex-1 flex flex-col items-center justify-center gap-4">
+        <main className="flex-1 flex flex-col items-center justify-center gap-4 pt-16 md:pt-0">
           <h2 className="text-xl font-semibold">Article not found</h2>
           <Link href="/">
             <Button variant="outline">Back to Library</Button>
@@ -66,7 +69,7 @@ export default function ArticleView() {
     <div className="flex min-h-screen bg-background">
       <Sidebar />
       
-      <main className="flex-1 p-4 md:p-12 overflow-y-auto max-h-screen">
+      <main className="flex-1 px-4 pt-16 pb-4 md:p-12 overflow-y-auto max-h-screen">
         <div className="max-w-4xl mx-auto">
           {/* Header Navigation */}
           <div className="flex items-center justify-between mb-8">
@@ -77,39 +80,54 @@ export default function ArticleView() {
             </Link>
             
             <div className="flex items-center gap-2">
+              {user && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => toggleFavorite.mutate({ id, isFavorite: !!article.isFavorite })}
+                >
+                  <Star className={`w-4 h-4 ${article.isFavorite ? "fill-amber-400 text-amber-400" : ""}`} />
+                  {article.isFavorite ? "Favorited" : "Favorite"}
+                </Button>
+              )}
               <Link href={`/article/${id}/versions`}>
                 <Button variant="ghost" size="sm" className="gap-2">
                   <History className="w-4 h-4" /> History
                 </Button>
               </Link>
-              <Link href={`/edit/${id}`}>
-                <Button variant="outline" size="sm" className="gap-2">
-                  <Edit className="w-4 h-4" /> Edit
-                </Button>
-              </Link>
-              
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete this article?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This action cannot be undone. This will permanently delete the article
-                      "{article.title}" and remove it from our servers.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90">
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              {user && (
+                <>
+                  <Link href={`/edit/${id}`}>
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Edit className="w-4 h-4" /> Edit
+                    </Button>
+                  </Link>
+                  
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this article?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This action cannot be undone. This will permanently delete the article
+                          "{article.title}" and remove it from our servers.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90">
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </>
+              )}
             </div>
           </div>
 
@@ -134,12 +152,20 @@ export default function ArticleView() {
               </span>
               <span className="w-1 h-1 rounded-full bg-border" />
               <span>Created {format(new Date(article.createdAt), 'MMM d, yyyy')}</span>
+              <span className="w-1 h-1 rounded-full bg-border" />
+              <span className="flex items-center gap-1.5">
+                {article.isPublic ? (
+                  <><Globe className="w-3.5 h-3.5 text-green-600" /> Public</>
+                ) : (
+                  <><Lock className="w-3.5 h-3.5" /> Private</>
+                )}
+              </span>
             </div>
           </header>
 
           {/* Article Content */}
           <article className="prose-content min-h-[400px]">
-            <ReactMarkdown>{article.content}</ReactMarkdown>
+            <MarkdownContent content={article.content} />
           </article>
         </div>
       </main>

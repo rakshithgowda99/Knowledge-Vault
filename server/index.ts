@@ -1,8 +1,13 @@
 import "dotenv/config";
+import crypto from "crypto";
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import createMemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+
+const MemoryStore = createMemoryStore(session);
 
 const app = express();
 const httpServer = createServer(app);
@@ -10,6 +15,36 @@ const httpServer = createServer(app);
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
+  }
+}
+
+// ──── Session ────
+const sessionSecret = process.env.SESSION_SECRET || (() => {
+  console.warn("⚠️  SESSION_SECRET not set — generating a random secret. Sessions will not persist across restarts.");
+  return crypto.randomBytes(32).toString("hex");
+})();
+
+// NOTE: MemoryStore is fine for development but leaks memory in production.
+// For production, swap to a persistent store like connect-mongo or connect-redis.
+app.use(
+  session({
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    store: new MemoryStore({ checkPeriod: 86400000 }), // prune expired entries every 24h
+    cookie: {
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    },
+  })
+);
+
+// Extend session to hold userId
+declare module "express-session" {
+  interface SessionData {
+    userId?: string;
   }
 }
 
@@ -50,7 +85,9 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        // Truncate logged body to avoid leaking sensitive data or bloating logs
+        const body = JSON.stringify(capturedJsonResponse);
+        logLine += ` :: ${body.length > 200 ? body.slice(0, 200) + '...' : body}`;
       }
 
       log(logLine);
@@ -91,14 +128,7 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
+  httpServer.listen(port, "0.0.0.0", () => {
+    log(`serving on port ${port}`);
+  });
 })();

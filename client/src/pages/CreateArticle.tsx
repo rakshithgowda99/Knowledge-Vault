@@ -1,14 +1,24 @@
 import { useLocation } from "wouter";
 import { useCreateArticle } from "@/hooks/use-articles";
+import { useUser } from "@/hooks/use-auth";
 import { Sidebar } from "@/components/Sidebar";
 import { ArticleEditor } from "@/components/ArticleEditor";
 import { type InsertArticle } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { Loader2 } from "lucide-react";
 
 export default function CreateArticle() {
   const [, setLocation] = useLocation();
   const createMutation = useCreateArticle();
+  const { data: user, isLoading: authLoading } = useUser();
   const { toast } = useToast();
+
+  // Redirect if not authenticated — checked before any render
+  if (!authLoading && !user) {
+    toast({ variant: "destructive", title: "Sign in required", description: "Please sign in to create articles." });
+    setLocation("/auth");
+    return null;
+  }
 
   const handleSubmit = async (data: InsertArticle) => {
     const newArticle = await createMutation.mutateAsync(data);
@@ -19,17 +29,27 @@ export default function CreateArticle() {
     setLocation(`/article/${newArticle.id}`);
   };
 
+  if (authLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex h-screen bg-background">
       <Sidebar />
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <div className="flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full h-full">
+      <main className="flex-1 overflow-y-auto">
+        <div className="px-4 pt-16 pb-4 md:p-8 max-w-5xl mx-auto w-full min-h-full">
            <div className="mb-6">
              <h1 className="text-2xl font-display font-bold text-foreground">Create New Article</h1>
              <p className="text-muted-foreground text-sm">Draft a new piece of knowledge</p>
            </div>
            
-           <div className="flex-1 h-[calc(100vh-140px)]">
+           <div className="h-[calc(100vh-140px)]">
              <ArticleEditor 
                onSubmit={handleSubmit} 
                isSubmitting={createMutation.isPending}
